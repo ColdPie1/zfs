@@ -29,11 +29,13 @@
 #include <libzfs.h>
 #include "libzfs_impl.h"
 
-#define	init_share(zfsname, path, shareopts) \
+#define	init_share(zfsname, path, shareopts, lines, lines_cnt) \
 	{ \
 		.sa_zfsname = zfsname, \
 		.sa_mountpoint = path, \
 		.sa_shareopts = shareopts, \
+		.sa_err_lines = lines, \
+		.sa_err_lines_cnt = lines_cnt, \
 	}
 
 #define	VALIDATE_PROTOCOL(proto, ...) \
@@ -50,7 +52,7 @@ static const sa_fstype_t *fstypes[SA_PROTOCOL_COUNT] =
 
 int
 sa_enable_share(const char *zfsname, const char *mountpoint,
-    const char *shareopts, enum sa_protocol protocol)
+    const char *shareopts, enum sa_protocol protocol, char **lines[], int *lines_cnt)
 {
 	VALIDATE_PROTOCOL(protocol, SA_INVALID_PROTOCOL);
 
@@ -59,16 +61,16 @@ sa_enable_share(const char *zfsname, const char *mountpoint,
 		return (error);
 
 	const struct sa_share_impl args =
-	    init_share(zfsname, mountpoint, shareopts);
+	    init_share(zfsname, mountpoint, shareopts, lines, lines_cnt);
 	return (fstypes[protocol]->enable_share(&args));
 }
 
 int
-sa_disable_share(const char *mountpoint, enum sa_protocol protocol)
+sa_disable_share(const char *mountpoint, enum sa_protocol protocol, char **lines[], int *lines_cnt)
 {
 	VALIDATE_PROTOCOL(protocol, SA_INVALID_PROTOCOL);
 
-	const struct sa_share_impl args = init_share(NULL, mountpoint, NULL);
+	const struct sa_share_impl args = init_share(NULL, mountpoint, NULL, lines, lines_cnt);
 	return (fstypes[protocol]->disable_share(&args));
 }
 
@@ -77,7 +79,7 @@ sa_is_shared(const char *mountpoint, enum sa_protocol protocol)
 {
 	VALIDATE_PROTOCOL(protocol, B_FALSE);
 
-	const struct sa_share_impl args = init_share(NULL, mountpoint, NULL);
+	const struct sa_share_impl args = init_share(NULL, mountpoint, NULL, NULL, NULL);
 	return (fstypes[protocol]->is_shared(&args));
 }
 

@@ -215,7 +215,7 @@ out:
  * Used internally by smb_enable_share to enable sharing for a single host.
  */
 static int
-smb_enable_share_one(const char *sharename, const char *sharepath)
+smb_enable_share_one(const char *sharename, const char *sharepath, char **stderr_lines[], int *stderr_lines_cnt)
 {
 	char name[SMB_NAME_MAX], comment[SMB_COMMENT_MAX];
 
@@ -249,8 +249,9 @@ smb_enable_share_one(const char *sharename, const char *sharepath)
 		NULL,
 	};
 
-	if (libzfs_run_process(argv[0], argv, 0) != 0)
+	if (libzfs_run_process_get_outs(argv[0], argv, 0, NULL, NULL, stderr_lines, stderr_lines_cnt) != 0) {
 		return (SA_SYSTEM_ERR);
+	}
 
 	/* Reload the share file */
 	(void) smb_retrieve_shares();
@@ -278,14 +279,14 @@ smb_enable_share(sa_share_impl_t impl_share)
 
 	/* Magic: Enable (i.e., 'create new') share */
 	return (smb_enable_share_one(impl_share->sa_zfsname,
-	    impl_share->sa_mountpoint));
+	    impl_share->sa_mountpoint, impl_share->sa_err_lines, impl_share->sa_err_lines_cnt));
 }
 
 /*
  * Used internally by smb_disable_share to disable sharing for a single host.
  */
 static int
-smb_disable_share_one(const char *sharename)
+smb_disable_share_one(const char *sharename, char **stderr_lines[], int *stderr_lines_cnt)
 {
 	/* CMD: net -S SMB_NET_CMD_ARG_HOST usershare delete Test1 */
 	char *argv[] = {
@@ -298,7 +299,7 @@ smb_disable_share_one(const char *sharename)
 		NULL,
 	};
 
-	if (libzfs_run_process(argv[0], argv, 0) != 0)
+	if (libzfs_run_process_get_outs(argv[0], argv, 0, NULL, NULL, stderr_lines, stderr_lines_cnt) != 0)
 		return (SA_SYSTEM_ERR);
 	else
 		return (SA_OK);
@@ -320,7 +321,7 @@ smb_disable_share(sa_share_impl_t impl_share)
 
 	for (const smb_share_t *i = smb_shares; i != NULL; i = i->next)
 		if (strcmp(impl_share->sa_mountpoint, i->path) == 0)
-			return (smb_disable_share_one(i->name));
+			return (smb_disable_share_one(i->name, impl_share->sa_err_lines, impl_share->sa_err_lines_cnt));
 
 	return (SA_OK);
 }

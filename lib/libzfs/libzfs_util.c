@@ -885,7 +885,7 @@ libzfs_print_on_error(libzfs_handle_t *hdl, boolean_t printerr)
  * Returns the number of lines read.
  */
 static int
-libzfs_read_stdout_from_fd(int fd, char **lines[])
+libzfs_read_lines_from_fd(int fd, char **lines[])
 {
 
 	FILE *fp;
@@ -924,18 +924,23 @@ libzfs_read_stdout_from_fd(int fd, char **lines[])
 
 static int
 libzfs_run_process_impl(const char *path, char *argv[], char *env[], int flags,
-    char **lines[], int *lines_cnt)
+    char **stdout_lines[], int *stdout_lines_cnt, char **stderr_lines[], int *stderr_lines_cnt)
 {
 	pid_t pid;
 	int error, devnull_fd;
-	int link[2];
+	int stdout_link[2], stderr_link[2];
 
 	/*
-	 * Setup a pipe between our child and parent process if we're
-	 * reading stdout.
+	 * Setup pipes between our child and parent process if we're
+	 * reading stdout or stderr.
 	 */
-	if (lines != NULL && pipe2(link, O_NONBLOCK | O_CLOEXEC) == -1)
+	if (stdout_lines != NULL && pipe2(stdout_link, O_NONBLOCK | O_CLOEXEC) == -1)
 		return (-EPIPE);
+	if (stderr_lines != NULL && pipe2(stderr_link, O_NONBLOCK | O_CLOEXEC) == -1) {
+		if (stdout_lines != NULL)
+			close(stdout_link[1]);
+		return (-EPIPE);
+	}
 
 	pid = fork();
 	if (pid == 0) {
@@ -946,15 +951,19 @@ libzfs_run_process_impl(const char *path, char *argv[], char *env[], int flags,
 		if (devnull_fd < 0)
 			_exit(-1);
 
-		if (!(flags & STDOUT_VERBOSE) && (lines == NULL))
+		if (!(flags & STDOUT_VERBOSE) && (stdout_lines == NULL))
 			(void) dup2(devnull_fd, STDOUT_FILENO);
-		else if (lines != NULL) {
-			/* Save the output to lines[] */
-			dup2(link[1], STDOUT_FILENO);
+		else if (stdout_lines != NULL) {
+			/* Save the output to stdout_lines[] */
+			dup2(stdout_link[1], STDOUT_FILENO);
 		}
 
-		if (!(flags & STDERR_VERBOSE))
+		if (!(flags & STDERR_VERBOSE) && (stderr_lines == NULL))
 			(void) dup2(devnull_fd, STDERR_FILENO);
+		else if (stderr_lines != NULL) {
+			/* Save the output to stderr_lines[] */
+			dup2(stderr_link[1], STDERR_FILENO);
+		}
 
 		if (flags & NO_DEFAULT_PATH) {
 			if (env == NULL)
@@ -979,9 +988,13 @@ libzfs_run_process_impl(const char *path, char *argv[], char *env[], int flags,
 		if (error < 0 || !WIFEXITED(status))
 			return (-1);
 
-		if (lines != NULL) {
-			close(link[1]);
-			*lines_cnt = libzfs_read_stdout_from_fd(link[0], lines);
+		if (stdout_lines != NULL) {
+			close(stdout_link[1]);
+			*stdout_lines_cnt = libzfs_read_lines_from_fd(stdout_link[0], stdout_lines);
+		}
+		if (stderr_lines != NULL) {
+			close(stderr_link[1]);
+			*stderr_lines_cnt = libzfs_read_lines_from_fd(stderr_link[0], stderr_lines);
 		}
 		return (WEXITSTATUS(status));
 	}
@@ -992,7 +1005,7 @@ libzfs_run_process_impl(const char *path, char *argv[], char *env[], int flags,
 int
 libzfs_run_process(const char *path, char *argv[], int flags)
 {
-	return (libzfs_run_process_impl(path, argv, NULL, flags, NULL, NULL));
+	return (libzfs_run_process_impl(path, argv, NULL, flags, NULL, NULL, NULL, NULL));
 }
 
 /*
@@ -1005,7 +1018,16 @@ int
 libzfs_run_process_get_stdout(const char *path, char *argv[], char *env[],
     char **lines[], int *lines_cnt)
 {
-	return (libzfs_run_process_impl(path, argv, env, 0, lines, lines_cnt));
+	return (libzfs_run_process_impl(path, argv, env, 0, lines, lines_cnt, NULL, NULL));
+}
+
+int
+libzfs_run_process_get_outs(const char *path, char *argv[], char *env[],
+    char **stdout_lines[], int *stdout_lines_cnt,
+    char **stderr_lines[], int *stderr_lines_cnt)
+{
+	return (libzfs_run_process_impl(path, argv, env, 0,
+                    stdout_lines, stdout_lines_cnt, stderr_lines, stderr_lines_cnt));
 }
 
 /*
@@ -1017,7 +1039,39 @@ libzfs_run_process_get_stdout_nopath(const char *path, char *argv[],
     char *env[], char **lines[], int *lines_cnt)
 {
 	return (libzfs_run_process_impl(path, argv, env, NO_DEFAULT_PATH,
-	    lines, lines_cnt));
+	    lines, lines_cnt, NULL, NULL));
+}
+
+/*
+ * Allocate and return a single nul-terminated string containing each line from
+ * 'lines' separated by a newline character.  Caller must free() this string.
+ */
+char *
+libzfs_join_str_array(char **lines, int lines_cnt)
+{
+	char *ret, *cur;
+	int i;
+	size_t cnt = 1; /* terminator */
+
+	if (lines == NULL)
+		return NULL;
+
+	for (i = 0; i < lines_cnt; ++i) {
+		cnt += strlen(lines[i]) + 1;
+	}
+
+	cur = ret = calloc(cnt, 1);
+	if (ret== NULL)
+		return NULL;
+
+	for (i = 0; i < lines_cnt; ++i) {
+		cur = stpcpy(cur, lines[i]);
+		if (i != lines_cnt - 1)
+			*cur = '\n';
+		++cur;
+	}
+
+	return ret;
 }
 
 /*

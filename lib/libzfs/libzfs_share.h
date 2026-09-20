@@ -71,8 +71,8 @@ extern const char *const sa_protocol_names[SA_PROTOCOL_COUNT];
 
 /* share control */
 extern int sa_enable_share(const char *, const char *, const char *,
-    enum sa_protocol);
-extern int sa_disable_share(const char *, enum sa_protocol);
+    enum sa_protocol, char **[], int *);
+extern int sa_disable_share(const char *, enum sa_protocol, char **[], int *);
 extern boolean_t sa_is_shared(const char *, enum sa_protocol);
 extern void sa_commit_shares(enum sa_protocol);
 extern void sa_truncate_shares(enum sa_protocol);
@@ -86,6 +86,8 @@ typedef const struct sa_share_impl {
 	const char *sa_zfsname;
 	const char *sa_mountpoint;
 	const char *sa_shareopts;
+	char ***sa_err_lines;
+	int *sa_err_lines_cnt;
 } *sa_share_impl_t;
 
 typedef struct {

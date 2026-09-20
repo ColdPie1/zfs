@@ -719,11 +719,24 @@ static int
 unshare_one(libzfs_handle_t *hdl, const char *name, const char *mountpoint,
     enum sa_protocol proto)
 {
-	int err = sa_disable_share(mountpoint, proto);
-	if (err != SA_OK)
+	int err, err_lines_cnt = 0;
+	char **err_lines = NULL, *err_str;
+
+	err = sa_disable_share(mountpoint, proto, &err_lines, &err_lines_cnt);
+	if (err != SA_OK) {
+		err_str = libzfs_join_str_array(err_lines, err_lines_cnt);
+		if (err_str != NULL) {
+			zfs_error_fmt(hdl, proto_table[proto].p_unshare_err,
+			    dgettext(TEXT_DOMAIN, "cannot unshare '%s': %s. Share implementation reported:\n\"%s\""),
+			    name, sa_errorstr(err), err_str);
+			free(err_str);
+			return (-1);
+		}
+
 		return (zfs_error_fmt(hdl, proto_table[proto].p_unshare_err,
 		    dgettext(TEXT_DOMAIN, "cannot unshare '%s': %s"),
 		    name, sa_errorstr(err)));
+	}
 
 	return (0);
 }
@@ -741,7 +754,8 @@ zfs_share(zfs_handle_t *zhp, const enum sa_protocol *proto)
 	char sourcestr[ZFS_MAXPROPLEN];
 	const enum sa_protocol *curr_proto;
 	zprop_source_t sourcetype;
-	int err = 0;
+	int err = 0, err_lines_cnt = 0;
+	char **err_lines = NULL, *err_str;
 
 	if (proto == NULL)
 		proto = share_all_proto;
@@ -769,11 +783,21 @@ zfs_share(zfs_handle_t *zhp, const enum sa_protocol *proto)
 			continue;
 
 		err = sa_enable_share(zfs_get_name(zhp), mountpoint, shareopts,
-		    *curr_proto);
+		    *curr_proto, &err_lines, &err_lines_cnt);
 		if (err != SA_OK) {
+			err_str = libzfs_join_str_array(err_lines, err_lines_cnt);
+			if (err_str != NULL) {
+				zfs_error_fmt(zhp->zfs_hdl,
+				    proto_table[*curr_proto].p_share_err,
+				    dgettext(TEXT_DOMAIN, "cannot share '%s': %s. Share implementation reported:\n\"%s\""),
+				    zfs_get_name(zhp), sa_errorstr(err), err_str);
+				free(err_str);
+				return (-1);
+			}
+
 			return (zfs_error_fmt(zhp->zfs_hdl,
 			    proto_table[*curr_proto].p_share_err,
-			    dgettext(TEXT_DOMAIN, "cannot share '%s: %s'"),
+			    dgettext(TEXT_DOMAIN, "cannot share '%s': %s"),
 			    zfs_get_name(zhp), sa_errorstr(err)));
 		}
 

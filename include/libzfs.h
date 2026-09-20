@@ -1017,7 +1017,10 @@ _LIBZFS_H int libzfs_run_process_get_stdout(const char *, char *[], char *[],
     char **[], int *);
 _LIBZFS_H int libzfs_run_process_get_stdout_nopath(const char *, char *[],
     char *[], char **[], int *);
+_LIBZFS_H int libzfs_run_process_get_outs(const char *, char *[], char *[],
+    char **[], int *, char **[], int *);
 
+_LIBZFS_H char *libzfs_join_str_array(char **, int);
 _LIBZFS_H void libzfs_free_str_array(char **, int);
 
 _LIBZFS_H boolean_t libzfs_envvar_is_set(const char *);
